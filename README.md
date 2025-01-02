@@ -36,17 +36,16 @@ your-directory/
    chmod +x setup.sh load-env.sh start.sh
    ```
 
-2. Set up directories and configurations:
+2. Set up directories, variables, config:
    ```
    ./setup.sh
    ```
-
-3. Load environment variables:
+3. (Optional) Verify environment variable defaults:
    ```
-   source load-env.sh
+   ./load-env.sh
    ```
 
-4. Start the development environment:
+3. Start the development environment:
    ```
    ./start.sh
    ```

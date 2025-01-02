@@ -9,6 +9,7 @@
     image_name: "{{ lookup('env', 'IMAGE_NAME') }}"
     container_name: "{{ lookup('env', 'CONTAINER_NAME') }}"
     tar_file_path: "{{ lookup('env', 'TAR_FILE_PATH') }}"
+    venv_name: "{{ lookup('env', 'VENV_NAME') }}"
 
   tasks:
     - name: Ensure container directory exists
@@ -26,7 +27,7 @@
           RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev python3-dev && \
               python3 -m pip install --upgrade pip && \
               python3 -m pip install flask requests ytmusicapi
-          CMD ["python3"]
+          CMD ["sh", "-c", "echo 'Welcome to the musiq-container'; exec sh"]
 
     - name: Validate image tar file
       stat:
@@ -71,20 +72,6 @@
       command: docker start "{{ container_name }}"
       when: container_status.stdout == 'exited'
 
-    - name: Check if virtual environment exists
-      command: docker exec "{{ container_name }}" test -d /home/app/{{ venv_name }}
-      register: venv_check
+    - name: Ensure container stays running
+      command: docker exec "{{ container_name }}" sh -c "echo 'Container is running.'"
       failed_when: false
-
-    - name: Log virtual environment status
-      debug:
-        msg: >
-          Virtual environment {{ 'exists' if venv_check.rc == 0 else 'does not exist' }}
-
-    - name: Provide manual steps for updating virtual environment
-      debug:
-        msg: >
-          The Python virtual environment is pre-configured in the Docker image. To modify or
-          add dependencies, update the Dockerfile template in this playbook and rebuild the image.
-      when: venv_check.rc != 0
-      

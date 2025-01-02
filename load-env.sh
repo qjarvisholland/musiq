@@ -1,33 +1,33 @@
 #!/bin/bash
 
-(return 0 2>/dev/null) && SOURCED=true || SOURCED=false
-if [ "$SOURCED" = false ]; then
-    echo "Error: Run with: source load-env.sh" >&2
+# Check if env.conf exists
+if [ ! -f ./env.conf ]; then
+    echo "Error: env.conf not found. Ensure it exists in the current directory." >&2
     exit 1
 fi
 
-if [ -z "${MUSIQ_DIR}" ]; then
-    echo "Error: MUSIQ_DIR not set. Run setup.sh first" >&2
-    return 1
-fi
-
-if [ ! -f "./env.conf" ]; then
-    echo "Error: env.conf not found" >&2
-    return 1
-fi
-
-# Export variables from env.conf
+# Source env.conf
 set -a
 source ./env.conf
 set +a
 
-for dir in "$APP_DIR" "$CONTAINER_DIR" "$RESOURCES_DIR"; do
-    if [ ! -d "$dir" ]; then
-        echo "Error: Directory $dir missing. Run setup.sh again" >&2
-        return 1
+# Validate required variables
+REQUIRED_VARS=("MUSIQ_DIR" "APP_DIR" "CONTAINER_DIR" "RESOURCES_DIR"
+               "IMAGE_NAME" "CONTAINER_NAME" "DOCKERFILE_PATH"
+               "TAR_FILE_PATH" "VENV_NAME" "PLAYBOOK_NAME")
+missing_vars=()
+
+for var in "${REQUIRED_VARS[@]}"; do
+    if [ -z "${!var}" ]; then
+        missing_vars+=("$var")
     fi
 done
 
-echo "Environment loaded:"
+if [ ${#missing_vars[@]} -gt 0 ]; then
+    echo "Error: Missing required environment variables in env.conf:" >&2
+    printf "  %s\n" "${missing_vars[@]}" >&2
+    exit 1
+fi
+
+echo "Environment loaded successfully:"
 env | grep -E "^(MUSIQ_|CONTAINER_|IMAGE_|VENV_|PLAYBOOK_)" | sort
-return 0

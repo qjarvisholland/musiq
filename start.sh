@@ -19,7 +19,6 @@ run_playbook() {
     echo "Running playbook '$PLAYBOOK_NAME'..."
     if ! ansible-playbook "$PLAYBOOK_NAME"; then
         echo "Error: Failed to run playbook" >&2
-        echo "Suggestion: Check the playbook logs for more details." >&2
         exit 1
     fi
 }
@@ -38,11 +37,10 @@ wait_for_container() {
     exit 1
 }
 
-# Connect to the Docker container
+# Connect to the Docker container and display a welcome message
 connect_to_container() {
     echo "Connecting to container shell..."
-    docker exec -it "$CONTAINER_NAME" sh -c \
-        ". /home/app/$VENV_NAME/bin/activate && exec sh" || {
+    docker exec -it "$CONTAINER_NAME" sh -c "echo 'Welcome to the musiq-container'; exec sh" || {
         echo "Error: Failed to connect to container." >&2
         exit 1
     }
