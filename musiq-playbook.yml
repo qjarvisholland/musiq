@@ -8,7 +8,6 @@
     dockerfile_path: "{{ lookup('env', 'DOCKERFILE_PATH') }}"
     image_name: "{{ lookup('env', 'IMAGE_NAME') }}"
     container_name: "{{ lookup('env', 'CONTAINER_NAME') }}"
-    venv_name: "{{ lookup('env', 'VENV_NAME') }}"
     tar_file_path: "{{ lookup('env', 'TAR_FILE_PATH') }}"
 
   tasks:
@@ -17,13 +16,16 @@
         path: "{{ container_dir }}"
         state: directory
 
-    - name: Create Dockerfile for Python 3.12
+    - name: Create Dockerfile for Python 3.12 with dependencies
       copy:
         dest: "{{ dockerfile_path }}"
         content: |
           FROM python:3.12-alpine
           WORKDIR /home/app
           VOLUME ["/home/app", "/home/resources"]
+          RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev python3-dev && \
+              python3 -m pip install --upgrade pip && \
+              python3 -m pip install flask requests ytmusicapi
           CMD ["python3"]
 
     - name: Validate image tar file
@@ -54,7 +56,7 @@
       when: not tar_file_check.stat.exists or tar_file_check.stat.size == 0
 
     - name: Check if container exists
-      shell: docker inspect --format '{{.State.Status}}' "{{ container_name }}"
+      shell: docker inspect --format '{% raw %}{{.State.Status}}{% endraw %}' "{{ container_name }}"
       register: container_status
       failed_when: false
 
@@ -74,14 +76,15 @@
       register: venv_check
       failed_when: false
 
-    - name: Create virtual environment if missing
-      command: docker exec "{{ container_name }}" python3 -m venv /home/app/{{ venv_name }}
-      when: venv_check.rc != 0
+    - name: Log virtual environment status
+      debug:
+        msg: >
+          Virtual environment {{ 'exists' if venv_check.rc == 0 else 'does not exist' }}
 
-    - name: Install Python packages
-      command: >
-        docker exec "{{ container_name }}" sh -c "
-        . /home/app/{{ venv_name }}/bin/activate &&
-        python3 -m pip install --upgrade pip &&
-        python3 -m pip freeze | grep -q 'flask\|requests\|ytmusicapi' || 
-        python3 -m pip install ytmusicapi flask requests"
+    - name: Provide manual steps for updating virtual environment
+      debug:
+        msg: >
+          The Python virtual environment is pre-configured in the Docker image. To modify or
+          add dependencies, update the Dockerfile template in this playbook and rebuild the image.
+      when: venv_check.rc != 0
+      

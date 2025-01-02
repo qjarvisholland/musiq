@@ -6,8 +6,8 @@ if [ "$SOURCED" = false ]; then
     exit 1
 fi
 
-if [ ! -d "${MUSIQ_DIR:-not_set}" ]; then
-    echo "Error: MUSIQ_DIR not found. Run setup.sh first" >&2
+if [ -z "${MUSIQ_DIR}" ]; then
+    echo "Error: MUSIQ_DIR not set. Run setup.sh first" >&2
     return 1
 fi
 
@@ -16,6 +16,7 @@ if [ ! -f "./env.conf" ]; then
     return 1
 fi
 
+# Export variables from env.conf
 set -a
 source ./env.conf
 set +a
