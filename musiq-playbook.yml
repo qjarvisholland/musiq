@@ -1,0 +1,87 @@
+---
+- hosts: localhost
+  vars:
+    musiq_dir: "{{ lookup('env', 'MUSIQ_DIR') }}"
+    container_dir: "{{ lookup('env', 'CONTAINER_DIR') }}"
+    app_dir: "{{ lookup('env', 'APP_DIR') }}"
+    resources_dir: "{{ lookup('env', 'RESOURCES_DIR') }}"
+    dockerfile_path: "{{ lookup('env', 'DOCKERFILE_PATH') }}"
+    image_name: "{{ lookup('env', 'IMAGE_NAME') }}"
+    container_name: "{{ lookup('env', 'CONTAINER_NAME') }}"
+    venv_name: "{{ lookup('env', 'VENV_NAME') }}"
+    tar_file_path: "{{ lookup('env', 'TAR_FILE_PATH') }}"
+
+  tasks:
+    - name: Ensure container directory exists
+      file:
+        path: "{{ container_dir }}"
+        state: directory
+
+    - name: Create Dockerfile for Python 3.12
+      copy:
+        dest: "{{ dockerfile_path }}"
+        content: |
+          FROM python:3.12-alpine
+          WORKDIR /home/app
+          VOLUME ["/home/app", "/home/resources"]
+          CMD ["python3"]
+
+    - name: Validate image tar file
+      stat:
+        path: "{{ tar_file_path }}"
+      register: tar_file_check
+
+    - name: Check if Docker image exists locally
+      command: docker images -q "{{ image_name }}"
+      register: image_check
+      changed_when: false
+
+    - name: Load image from tar
+      command: docker load -i "{{ tar_file_path }}"
+      when: 
+        - tar_file_check.stat.exists 
+        - tar_file_check.stat.size > 0
+        - image_check.stdout == ""
+
+    - name: Build Docker image
+      command: docker build -t "{{ image_name }}" "{{ container_dir }}"
+      when: 
+        - (not tar_file_check.stat.exists or tar_file_check.stat.size == 0)
+        - image_check.stdout == ""
+
+    - name: Save image as tar
+      command: docker save -o "{{ tar_file_path }}" "{{ image_name }}"
+      when: not tar_file_check.stat.exists or tar_file_check.stat.size == 0
+
+    - name: Check if container exists
+      shell: docker inspect --format '{{.State.Status}}' "{{ container_name }}"
+      register: container_status
+      failed_when: false
+
+    - name: Run container if it does not exist
+      command: >
+        docker run -d --name "{{ container_name }}"
+        -v "{{ app_dir }}:/home/app" -v "{{ resources_dir }}:/home/resources"
+        -w /home/app "{{ image_name }}"
+      when: container_status.failed
+
+    - name: Start container if stopped
+      command: docker start "{{ container_name }}"
+      when: container_status.stdout == 'exited'
+
+    - name: Check if virtual environment exists
+      command: docker exec "{{ container_name }}" test -d /home/app/{{ venv_name }}
+      register: venv_check
+      failed_when: false
+
+    - name: Create virtual environment if missing
+      command: docker exec "{{ container_name }}" python3 -m venv /home/app/{{ venv_name }}
+      when: venv_check.rc != 0
+
+    - name: Install Python packages
+      command: >
+        docker exec "{{ container_name }}" sh -c "
+        . /home/app/{{ venv_name }}/bin/activate &&
+        python3 -m pip install --upgrade pip &&
+        python3 -m pip freeze | grep -q 'flask\|requests\|ytmusicapi' || 
+        python3 -m pip install ytmusicapi flask requests"
