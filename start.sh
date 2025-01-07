@@ -1,43 +1,43 @@
-#!/bin/bash
+#!/bin/sh
 
 TIMEOUT=100
-REQUIRED_VARS=("CONTAINER_NAME" "VENV_NAME" "PLAYBOOK_NAME")
+REQUIRED_VARS="CONTAINER_NAME VENV_NAME PLAYBOOK_NAME"
 
-# Check for missing environment variables
-missing_vars=()
-for var in "${REQUIRED_VARS[@]}"; do
-    [ -z "${!var}" ] && missing_vars+=("$var")
-done
 
-if [ ${#missing_vars[@]} -gt 0 ]; then
-    echo "Error: Environment not loaded. Run 'source load-env.sh' first" >&2
+# Source environment variables
+if [ -f ./load-env.sh ]; then
+    . ./load-env.sh
+    echo "Environment variables loaded successfully."
+    for var in $REQUIRED_VARS; do
+        eval "value=\$$var"
+        if [ -z "$value" ]; then
+            echo "Error: $var is not set. Check env.conf or load-env.sh." >&2
+            exit 1
+        fi
+    done
+else
+    echo "Error: load-env.sh not found. Ensure it exists in the current directory." >&2
     exit 1
 fi
 
-# Run the Ansible playbook
+# Debugging loaded variables
+echo "Loaded environment variables:"
+for var in $REQUIRED_VARS; do
+    eval "value=\$$var"
+    echo "  $var=$value"
+done
+
 run_playbook() {
-    echo "Running playbook '$PLAYBOOK_NAME'..."
-    if ! ansible-playbook "$PLAYBOOK_NAME"; then
+    ansible-playbook "$PLAYBOOK_NAME" || {
         echo "Error: Failed to run playbook" >&2
         exit 1
-    fi
+    }
 }
 
 # Wait for the Docker container to start
-wait_for_container() {
-    echo "Waiting for container '$CONTAINER_NAME' to start..."
-    for ((i=1; i<=TIMEOUT; i++)); do
-        if docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true; then
-            echo "Container '$CONTAINER_NAME' is running."
-            return 0
-        fi
-        sleep 1
-    done
-    echo "Error: Container failed to start within $TIMEOUT seconds." >&2
-    exit 1
-}
 
-# Connect to the Docker container and display a welcome message
+
+# Connect to the Docker container shell
 connect_to_container() {
     echo "Connecting to container shell..."
     docker exec -it "$CONTAINER_NAME" sh -c "echo 'Welcome to the musiq-container'; exec sh" || {
@@ -50,7 +50,7 @@ connect_to_container() {
 main() {
     echo "Starting development environment..."
     run_playbook
-    wait_for_container
+#    wait_for_container
     connect_to_container
 }
 

@@ -1,77 +1,62 @@
 ---
-- hosts: localhost
+- name: Build and manage Docker container
+  hosts: localhost
+  gather_facts: false
+  
   vars:
-    musiq_dir: "{{ lookup('env', 'MUSIQ_DIR') }}"
-    container_dir: "{{ lookup('env', 'CONTAINER_DIR') }}"
-    app_dir: "{{ lookup('env', 'APP_DIR') }}"
-    resources_dir: "{{ lookup('env', 'RESOURCES_DIR') }}"
-    dockerfile_path: "{{ lookup('env', 'DOCKERFILE_PATH') }}"
-    image_name: "{{ lookup('env', 'IMAGE_NAME') }}"
-    container_name: "{{ lookup('env', 'CONTAINER_NAME') }}"
-    tar_file_path: "{{ lookup('env', 'TAR_FILE_PATH') }}"
-    venv_name: "{{ lookup('env', 'VENV_NAME') }}"
+    musiq_dir: "{{ lookup('env', 'MUSIQ_DIR') | default('/path/to/musiq') }}"
+    container_dir: "{{ lookup('env', 'CONTAINER_DIR') | default('/path/to/container') }}"
+    app_dir: "{{ lookup('env', 'APP_DIR') | default('/path/to/app') }}"
+    resources_dir: "{{ lookup('env', 'RESOURCES_DIR') | default('/path/to/resources') }}"
+    dockerfile_path: "{{ container_dir }}/Dockerfile"
+    tar_file_path: "{{ container_dir }}/image.tar"
+    image_name: "{{ lookup('env', 'IMAGE_NAME') | default('python:3.12-alpine') }}"
+    container_name: "{{ lookup('env', 'CONTAINER_NAME') | default('python-app') }}"
+    venv_name: "{{ lookup('env', 'VENV_NAME') | default('python-env') }}"
 
   tasks:
     - name: Ensure container directory exists
-      file:
+      ansible.builtin.file:
         path: "{{ container_dir }}"
         state: directory
+        mode: '0755'
 
-    - name: Create Dockerfile for Python 3.12 with dependencies
-      copy:
+    - name: Create Dockerfile for Python dependencies
+      ansible.builtin.copy:
         dest: "{{ dockerfile_path }}"
+        mode: '0644'
         content: |
-          FROM python:3.12-alpine
+          FROM "{{ image_name }}"
           WORKDIR /home/app
+          
           VOLUME ["/home/app", "/home/resources"]
-          RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev python3-dev && \
+          
+          RUN apk update && \
+              apk add --no-cache \
+                gcc \
+                bash \
+                musl-dev \
+                libffi-dev \
+                openssl-dev \
+                python3-dev \
+                py3-pip && \
               python3 -m pip install --upgrade pip && \
-              python3 -m pip install flask requests ytmusicapi
-          CMD ["sh", "-c", "echo 'Welcome to the musiq-container'; exec sh"]
-
-    - name: Validate image tar file
-      stat:
-        path: "{{ tar_file_path }}"
-      register: tar_file_check
-
-    - name: Check if Docker image exists locally
-      command: docker images -q "{{ image_name }}"
-      register: image_check
-      changed_when: false
-
-    - name: Load image from tar
-      command: docker load -i "{{ tar_file_path }}"
-      when: 
-        - tar_file_check.stat.exists 
-        - tar_file_check.stat.size > 0
-        - image_check.stdout == ""
+              python3 -m pip install flask requests ytmusicapi && \
+              apk del gcc musl-dev libffi-dev openssl-dev python3-dev
+          
+          ENTRYPOINT ["sh", "-c"]
+          CMD ["while true; do sleep 30; done"]
 
     - name: Build Docker image
-      command: docker build -t "{{ image_name }}" "{{ container_dir }}"
-      when: 
-        - (not tar_file_check.stat.exists or tar_file_check.stat.size == 0)
-        - image_check.stdout == ""
+      ansible.builtin.command:
+        cmd: docker build -t "{{ container_name }}" "{{ container_dir }}"
 
-    - name: Save image as tar
-      command: docker save -o "{{ tar_file_path }}" "{{ image_name }}"
-      when: not tar_file_check.stat.exists or tar_file_check.stat.size == 0
-
-    - name: Check if container exists
-      shell: docker inspect --format '{% raw %}{{.State.Status}}{% endraw %}' "{{ container_name }}"
-      register: container_status
-      failed_when: false
-
-    - name: Run container if it does not exist
-      command: >
-        docker run -d --name "{{ container_name }}"
-        -v "{{ app_dir }}:/home/app" -v "{{ resources_dir }}:/home/resources"
-        -w /home/app "{{ image_name }}"
-      when: container_status.failed
-
-    - name: Start container if stopped
-      command: docker start "{{ container_name }}"
-      when: container_status.stdout == 'exited'
-
-    - name: Ensure container stays running
-      command: docker exec "{{ container_name }}" sh -c "echo 'Container is running.'"
-      failed_when: false
+    - name: Run container
+      ansible.builtin.command:
+        cmd: >
+          docker run -d 
+          --name "{{ container_name }}"
+          -v "{{ app_dir }}:/home/app" 
+          -v "{{ resources_dir }}:/home/resources"
+          -w /home/app 
+          "{{ container_name }}"
